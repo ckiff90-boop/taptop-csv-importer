@@ -76,6 +76,8 @@
     .bar i{display:block;height:100%;width:0;background:#2563eb;transition:width .2s}
     .log{max-height:220px;overflow:auto;background:#0b1020;color:#d1d5db;border-radius:8px;padding:8px;font:11.5px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
     .log .e{color:#fca5a5}.log .w{color:#fcd34d}.log .o{color:#86efac}
+    .nf{margin-top:4px;padding:6px;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:8px}
+    .nf .row{margin:3px 0}
     label.ck{display:flex;gap:6px;align-items:center;font-size:12.5px}
     .warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:8px;padding:8px;font-size:12px;margin-top:6px}
   `));
@@ -257,6 +259,14 @@
     // одно поле — одна колонка
     const used = new Set();
     S.mapping = S.mapping.map((id) => (id && !used.has(id) ? (used.add(id), id) : ''));
+    S.newFields = {};
+  }
+
+  const NEW = '__new__';
+  function newFieldDefaults(j) {
+    const vals = S.rows.map((r) => r[j]);
+    const type = convert.guessType(vals);
+    return { name: S.headers[j] || `Поле ${j + 1}`, type, refId: '' };
   }
 
   function renderMapping() {
@@ -267,24 +277,102 @@
     const sample = (j) => S.rows.find((r) => String(r[j] ?? '').trim() !== '')?.[j] ?? '';
     const tbl = h('table', {}, h('tr', {}, h('th', {}, 'Колонка CSV'), h('th', {}, 'Пример'), h('th', {}, 'Поле коллекции')));
     S.headers.forEach((hd, j) => {
-      const sel = h('select', { onchange: () => { S.mapping[j] = sel.value; renderWarnings(); } },
+      const cell = h('td', {});
+      const sel = h('select', { onchange: () => {
+        S.mapping[j] = sel.value;
+        if (sel.value === NEW) S.newFields[j] = S.newFields[j] || newFieldDefaults(j); else delete S.newFields[j];
+        renderMapping();
+      } },
         h('option', { value: '' }, '— не импортировать —'),
-        ...S.fields.map((f) => h('option', { value: f.id }, `${f.fieldName} · ${api.TYPE_LABEL[f.type] || f.type}`)));
+        ...S.fields.map((f) => h('option', { value: f.id }, `${f.fieldName} · ${api.TYPE_LABEL[f.type] || f.type}`)),
+        h('option', { value: NEW }, '＋ Создать новое поле'));
       sel.value = S.mapping[j] || '';
-      tbl.append(h('tr', {}, h('td', {}, hd || `(колонка ${j + 1})`), h('td', { class: 'sample', title: sample(j) }, sample(j)), h('td', {}, sel)));
+      cell.append(sel);
+      if (S.mapping[j] === NEW) cell.append(newFieldEditor(j));
+      tbl.append(h('tr', {}, h('td', {}, hd || `(колонка ${j + 1})`), h('td', { class: 'sample', title: sample(j) }, sample(j)), cell));
     });
-    mapBox.replaceChildren(tbl, warnBox);
+    const freeCols = S.headers.map((_, j) => j).filter((j) => !S.mapping[j]);
+    const btnAll = h('button', { class: 'b', disabled: !freeCols.length, onclick: () => {
+      for (const j of freeCols) { S.mapping[j] = NEW; S.newFields[j] = newFieldDefaults(j); }
+      renderMapping();
+    } }, `＋ Создать поля для всех несопоставленных (${freeCols.length})`);
+    mapBox.replaceChildren(h('div', { class: 'row' }, btnAll), tbl, warnBox);
     renderWarnings();
   }
+
+  function newFieldEditor(j) {
+    const nf = S.newFields[j];
+    const inName = h('input', { type: 'text', value: nf.name, class: 'grow', placeholder: 'Название поля', oninput: () => { nf.name = inName.value; renderWarnings(); } });
+    const selType = h('select', { onchange: () => { nf.type = selType.value; renderMapping(); } },
+      ...api.NEW_FIELD_TYPES.map((t) => h('option', { value: t }, api.TYPE_LABEL[t])));
+    selType.value = nf.type;
+    const box = h('div', { class: 'nf' }, h('div', { class: 'row' }, inName), h('div', { class: 'row' }, selType));
+    if (nf.type === 'reference' || nf.type === 'multi_reference') {
+      const selRef = h('select', { class: 'grow', onchange: () => { nf.refId = selRef.value; renderWarnings(); } },
+        h('option', { value: '' }, '— связать с коллекцией —'),
+        ...S.collections.map((c) => h('option', { value: c.id }, c.title)));
+      selRef.value = nf.refId || '';
+      box.lastChild.append(selRef);
+    }
+    return box;
+  }
+
   const warnBox = h('div');
   function renderWarnings() {
     const w = [];
-    const dupl = S.mapping.filter((x, i) => x && S.mapping.indexOf(x) !== i);
+    const dupl = S.mapping.filter((x, i) => x && x !== NEW && S.mapping.indexOf(x) !== i);
     if (dupl.length) w.push('Одно поле выбрано для нескольких колонок — возьмётся последняя.');
     if (!S.mapping.includes('title')) w.push('Не выбрана колонка для Title — новые элементы создать не получится.');
     const unmapped = S.fields.filter((f) => f.isRequired && !S.mapping.includes(f.id));
     if (unmapped.length) w.push('Обязательные поля без колонки: ' + unmapped.map((f) => f.fieldName).join(', '));
+    const nfs = Object.values(S.newFields || {});
+    if (nfs.length) w.push(`Будет создано новых полей: ${nfs.length} (создаются при «Импортировать», при проверке — нет).`);
+    if (nfs.some((n) => !String(n.name).trim())) w.push('У нового поля не задано название.');
+    if (nfs.some((n) => (n.type === 'reference' || n.type === 'multi_reference') && !n.refId)) w.push('Для нового поля-связи не выбрана коллекция.');
+    const names = nfs.map((n) => norm(n.name));
+    if (names.some((n, i) => names.indexOf(n) !== i || S.fields.some((f) => norm(f.fieldName) === n)))
+      w.push('Название нового поля совпадает с существующим или другим новым.');
     warnBox.replaceChildren(...(w.length ? [h('div', { class: 'warn' }, w.join(' '))] : []));
+  }
+
+  // создать новые поля (или виртуальные — для проверки); возвращает обновлённую коллекцию и поля
+  async function ensureNewFields(dry) {
+    const cols = Object.keys(S.newFields || {}).map(Number).filter((j) => S.mapping[j] === NEW);
+    for (const j of cols) {
+      const nf = S.newFields[j];
+      if (!String(nf.name).trim()) throw new Error(`колонка «${S.headers[j]}»: не задано название нового поля`);
+      if ((nf.type === 'reference' || nf.type === 'multi_reference') && !nf.refId) throw new Error(`поле «${nf.name}»: не выбрана связанная коллекция`);
+    }
+    let fresh = await api.getCollection(S.col.id);
+    let fields = api.fieldsOf(fresh);
+    const colMap = {}; // j -> field
+    for (const j of cols) {
+      const nf = S.newFields[j];
+      const refId = nf.refId ? Number(nf.refId) : undefined;
+      if (dry) {
+        colMap[j] = { id: `${NEW}${j}`, type: nf.type, fieldName: nf.name.trim(), referencedCollectionId: refId };
+        continue;
+      }
+      const before = new Set(fields.map((f) => f.id));
+      await api.addField(S.col.id, nf.type, nf.name.trim(), refId);
+      fresh = await api.getCollection(S.col.id);
+      fields = api.fieldsOf(fresh);
+      const created = fields.find((f) => !before.has(f.id) && f.type === nf.type) || fields.find((f) => !before.has(f.id));
+      if (!created) throw new Error(`поле «${nf.name}» не появилось в коллекции после создания`);
+      log(`＋ Создано поле «${created.fieldName}» (${api.TYPE_LABEL[created.type]}, id ${created.id})`, 'o');
+      colMap[j] = created;
+      S.mapping[j] = created.id;
+      delete S.newFields[j];
+    }
+    if (!dry && cols.length) {
+      // обновить коллекцию в списке и UI
+      const idx = S.collections.findIndex((c) => c.id === S.col.id);
+      if (idx >= 0) S.collections[idx] = { ...S.collections[idx], ...fresh };
+      S.col = S.collections[idx] || S.col;
+      S.fields = fields;
+      renderMapping();
+    }
+    return { fresh, fields: dry ? fields.concat(Object.values(colMap)) : fields, colMap };
   }
 
   // ---------- references ----------
@@ -353,8 +441,11 @@
     if (!S.col) return alert('Выберите коллекцию');
     if (!S.rows.length) return alert('Загрузите CSV с данными');
     const mode = selMode.value, keyField = selKey.value;
-    const mappedCols = S.mapping.map((fid, j) => ({ j, f: S.fields.find((x) => x.id === fid) })).filter((x) => x.f);
-    if (!mappedCols.length) return alert('Не сопоставлено ни одной колонки');
+    if (!S.mapping.some((fid) => fid === NEW || S.fields.some((x) => x.id === fid))) return alert('Не сопоставлено ни одной колонки');
+    const newCount = Object.keys(S.newFields || {}).filter((j) => S.mapping[j] === NEW).length;
+    if (!dry && newCount && !confirm(`В коллекции «${S.col.title}» будет создано новых полей: ${newCount}:\n` +
+      Object.entries(S.newFields).filter(([j]) => S.mapping[j] === NEW).map(([, n]) => `• ${n.name} — ${api.TYPE_LABEL[n.type]}`).join('\n') +
+      '\n\nПродолжить?')) return;
     if (mode !== 'update' && !S.mapping.includes('title')) return alert('Для создания элементов нужна колонка с Title');
     if (mode !== 'create' && !S.mapping.includes(keyField)) return alert(`Для обновления нужна колонка-ключ: ${keyField === 'slug' ? 'Slug' : 'Title'}`);
 
@@ -363,11 +454,11 @@
     const stats = { created: 0, updated: 0, skipped: 0, errors: 0, warn: 0 };
     try {
       log(dry ? '— Проверка без записи —' : `— Импорт в «${S.col.title}» —`);
-      const fresh = await api.getCollection(S.col.id);
-      const fields = api.fieldsOf(fresh);
+      const { fresh, fields, colMap } = await ensureNewFields(dry);
+      const mappedCols = S.mapping.map((fid, j) => ({ j, f: colMap[j] || fields.find((x) => x.id === fid) })).filter((x) => x.f);
       const total0 = fresh?.page?.allItemsCount ?? fresh?.allItemsCount ?? 0;
 
-      const refFields = fields.filter((f) => (f.type === 'reference' || f.type === 'multi_reference') && S.mapping.includes(f.id));
+      const refFields = mappedCols.map((x) => x.f).filter((f) => f.type === 'reference' || f.type === 'multi_reference');
       if (refFields.length) log(`Загружаю связанные коллекции (${refFields.length})…`);
       const refMaps = await loadRefMaps(refFields);
 

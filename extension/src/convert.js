@@ -162,5 +162,22 @@
     }
   }
 
-  TT.convert = { toItemValue, fromItemValue, buildRefMap, parseDate, parseNumber, toRichText, fmtDate };
+  // угадать тип нового поля по значениям колонки
+  function guessType(values) {
+    const v = values.map((x) => String(x ?? '').trim()).filter(Boolean).slice(0, 200);
+    if (!v.length) return 'text';
+    const all = (fn) => v.every((x) => { try { return fn(x); } catch (_) { return false; } });
+    const BOOL = new Set(['да', 'нет', 'true', 'false', 'yes', 'no', 'вкл', 'выкл', 'on', 'off']);
+    if (all((x) => BOOL.has(x.toLowerCase()))) return 'switcher';
+    if (all((x) => parseNumber(x) != null)) return 'number';
+    if (all((x) => /^\d{1,2}[./]\d{1,2}[./]\d{4}([ T,]+\d{1,2}:\d{2}(:\d{2})?)?$|^\d{4}-\d{1,2}-\d{1,2}([ T]\d{1,2}:\d{2}(:\d{2})?)?$/.test(x) && parseDate(x)))
+      return 'date';
+    if (all((x) => /^https?:\/\/\S+$/i.test(x)))
+      return all((x) => /\.(jpe?g|png|webp|gif|svg|avif|bmp|tiff?)(\?.*)?$/i.test(x)) ? 'image' : 'link';
+    if (all((x) => /\.(jpe?g|png|webp|gif|svg|avif)$/i.test(x) && !/\s/.test(x))) return 'image';
+    if (v.some((x) => /<\/?(p|br|h[1-6]|ul|ol|li|strong|em|b|i|a)\b/i.test(x) || /\n/.test(x))) return 'rich_text';
+    return 'text';
+  }
+
+  TT.convert = { toItemValue, fromItemValue, buildRefMap, parseDate, parseNumber, toRichText, fmtDate, guessType };
 })();

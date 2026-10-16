@@ -23,7 +23,11 @@
 
   function buildUrl(method, params = {}) {
     let q = `method=mosaic/${method}&ver_id=${encodeURIComponent(VER_ID)}&access=${encodeURIComponent(ACCESS)}`;
-    for (const [k, v] of Object.entries(params)) q += `&param[${k}]=${encodeURIComponent(v)}`;
+    for (const [k, v] of Object.entries(params)) {
+      if (v && typeof v === 'object') {
+        for (const [sk, sv] of Object.entries(v)) if (sv != null) q += `&param[${k}][${sk}]=${encodeURIComponent(sv)}`;
+      } else q += `&param[${k}]=${encodeURIComponent(v)}`;
+    }
     return BASE + q + '&request_id=false';
   }
 
@@ -113,5 +117,12 @@
     createItem: (collectionId, itemData, files) => call('collection/item/create', { collection_id: collectionId }, formBody(itemData, files)),
     updateItem: (itemId, itemData, files) => call('collection/item/update', { item_id: itemId }, formBody(itemData, files)),
     getItem: (itemId) => call('collection/item/get', { item_id: itemId }),
+    // создать поле коллекции; ответ пустой — id нового поля ищется сравнением схем до/после
+    addField: (collectionId, type, fieldName, referencedCollectionId) =>
+      call('collection/addNewField', {
+        collection_id: collectionId, field_type: type,
+        field_data: { fieldName, referencedCollectionId: referencedCollectionId ?? null },
+      }),
+    NEW_FIELD_TYPES: ['text', 'rich_text', 'number', 'date', 'link', 'image', 'switcher', 'reference', 'multi_reference'],
   };
 })();

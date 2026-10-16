@@ -144,6 +144,15 @@ class H(BaseHTTPRequestHandler):
             elif m == "mosaic/collection/get":
                 c = COLS[int(p["collection_id"])]
                 r = col_public(c, (int(p.get("page", 1)), int(p.get("per_page", 100))))
+            elif m == "mosaic/collection/addNewField":
+                c = COLS[int(p["collection_id"])]
+                fid = os.urandom(3).hex()
+                extra = {}
+                if p.get("field_data][referencedCollectionId"):
+                    extra["referencedCollectionId"] = int(p["field_data][referencedCollectionId"])
+                c["cSchema"].append(F(fid, p["field_type"], p["field_data][fieldName"], **extra))
+                c["cOrder"].append(fid)
+                r = []
             elif m == "mosaic/collection/item/create":
                 c = COLS[int(p["collection_id"])]
                 if "title" not in item_data: raise ValueError("title required")
