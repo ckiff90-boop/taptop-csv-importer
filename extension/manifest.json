@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Taptop CSV → Коллекции",
+  "version": "0.1.0",
+  "description": "Импорт CSV в коллекции (CMS) Taptop и экспорт коллекций в CSV. Работает внутри редактора Taptop.",
+  "author": "Поток технологий — technologyflow.ru",
+  "icons": { "16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "action": { "default_title": "Taptop CSV → Коллекции", "default_icon": { "16": "icons/16.png", "48": "icons/48.png" } },
+  "background": { "service_worker": "background.js" },
+  "permissions": [],
+  "host_permissions": ["<all_urls>"],
+  "content_scripts": [
+    {
+      "matches": ["https://*/-/cms/v1/mosaic/*", "http://*/-/cms/v1/mosaic/*"],
+      "js": ["src/csv.js", "src/api.js", "src/convert.js", "src/ui.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
