@@ -54,3 +54,6 @@
 
 ## Разработка
 `test/mock_server.py` — имитация API редактора. Формы запросов и ответов в нём сняты с реального HAR. Запуск: `python3 test/mock_server.py 8765`, затем открыть `http://127.0.0.1:8765/-/cms/v1/mosaic/?ver_id=1&access=u%3B1`.
+
+## Лицензия
+MIT — см. [LICENSE](LICENSE).
