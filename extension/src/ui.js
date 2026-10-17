@@ -79,6 +79,11 @@
     .nf{margin-top:4px;padding:6px;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:8px}
     .nf .row{margin:3px 0}
     label.ck{display:flex;gap:6px;align-items:center;font-size:12.5px}
+    .ids{margin-top:8px;display:none}
+    .ids.open{display:block}
+    .ids code{font:12px ui-monospace,Menlo,Consolas,monospace;background:#f3f4f6;border-radius:5px;padding:2px 5px;user-select:all}
+    .ids td.cp{width:1%;white-space:nowrap}
+    .ids tr.del td{color:#9ca3af;text-decoration:line-through}
     .warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:8px;padding:8px;font-size:12px;margin-top:6px}
   `));
 
@@ -92,13 +97,16 @@
   // collection section
   const selCol = h('select', { class: 'grow', onchange: () => selectCollection(selCol.value) });
   const colInfo = h('div', { class: 'muted' });
+  const idsBox = h('div', { class: 'ids' });
   panel.append(h('div', { class: 'sec' },
     h('h4', {}, '1. Коллекция'),
     h('div', { class: 'row' }, selCol, h('button', { class: 'b', title: 'Обновить список', onclick: () => loadCollections() }, '↻')),
     colInfo,
     h('div', { class: 'row' },
       h('button', { class: 'b', onclick: () => downloadTemplate() }, 'Шаблон CSV'),
-      h('button', { class: 'b', onclick: () => exportCollection() }, 'Экспорт коллекции в CSV')),
+      h('button', { class: 'b', onclick: () => exportCollection() }, 'Экспорт коллекции в CSV'),
+      h('button', { class: 'b', title: 'ID коллекции и её полей — для фильтров и скриптов на сайте', onclick: () => toggleIds() }, 'ID полей')),
+    idsBox,
   ));
 
   // file section
@@ -194,6 +202,39 @@
       ? `Элементов: ${S.col.allItemsCount ?? '?'}. Поля: ${S.fields.map((f) => `${f.fieldName} (${api.TYPE_LABEL[f.type] || f.type})`).join(', ')}`
       : '';
     autoMap(); renderMapping();
+  }
+
+  // ---------- ID полей (для фильтров коллекции и кастомных скриптов) ----------
+  function copy(text, btn) {
+    const done = () => { const t = btn.textContent; btn.textContent = '✓'; setTimeout(() => (btn.textContent = t), 1200); };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done, () => fallback());
+    else fallback();
+    function fallback() {
+      const ta = h('textarea', { style: 'position:fixed;left:-9999px' }); ta.value = text;
+      document.body.append(ta); ta.select(); try { document.execCommand('copy'); done(); } catch (_) {} ta.remove();
+    }
+  }
+  function toggleIds(force) {
+    const open = force ?? !idsBox.classList.contains('open');
+    idsBox.classList.toggle('open', open);
+    if (open) renderIds();
+  }
+  function renderIds() {
+    if (!idsBox.classList.contains('open')) return;
+    if (!S.col) { idsBox.replaceChildren(h('div', { class: 'muted' }, 'Сначала выберите коллекцию.')); return; }
+    const all = [...(S.col.settings || []), ...(S.col.cSchema || [])];
+    const order = S.col.cOrder || [];
+    all.sort((a, b) => (order.indexOf(a.id) + 1 || 1e9) - (order.indexOf(b.id) + 1 || 1e9));
+    const idCell = (val) => { const b = h('button', { class: 'b', title: 'Копировать' }, '⧉'); b.onclick = () => copy(String(val), b); return [h('td', {}, h('code', {}, String(val))), h('td', { class: 'cp' }, b)]; };
+    const tbl = h('table', {}, h('tr', {}, h('th', {}, 'Поле'), h('th', {}, 'Тип'), h('th', {}, 'ID'), h('th', {}, '')));
+    tbl.append(h('tr', {}, h('td', {}, h('b', {}, 'Коллекция «' + S.col.title + '»')), h('td', {}, 'коллекция'), ...idCell(S.col.id)));
+    for (const f of all) {
+      const ref = f.referencedCollectionId ? ` → ${S.collections.find((c) => c.id === f.referencedCollectionId)?.title || f.referencedCollectionId}` : '';
+      tbl.append(h('tr', { class: f.deleted ? 'del' : '' },
+        h('td', {}, f.fieldName || f.id), h('td', {}, (api.TYPE_LABEL[f.type] || f.type || '') + ref + (f.deleted ? ' (удалено)' : '')), ...idCell(f.id)));
+    }
+    idsBox.replaceChildren(tbl, h('div', { class: 'muted', style: 'margin-top:6px' },
+      'ID поля нужен для фильтра коллекции на сайте (fieldId) и для настроек скриптов, например data-alias-field. ID коллекции — не то же самое, что ID списка на странице (вида i51b6l0zf).'));
   }
 
   function headerName(f) {
